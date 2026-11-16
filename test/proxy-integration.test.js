@@ -364,6 +364,25 @@ test('每一筆轉送都寫進 requests，且 cookie / authorization 在 DB 裡�
   await ctx.close();
 });
 
+test('擷取會帶上本次啟動的 session_id（否則面板的 session 篩選永遠篩不到東西）', async () => {
+  const upstream = await startFakeUpstream((req, res) => {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end('{}');
+  });
+  const app = await startTestApp({}, { sessionId: 'ses_test_run' });
+  createSite(app.db, { id: 'demo', name: 'Demo', targetOrigin: upstream.origin });
+
+  await fetch(`${app.baseUrl}/p/demo/api/thing`);
+  await new Promise((resolve) => setTimeout(resolve, 150));
+
+  const { rows } = listRequests(app.db, { sessionId: 'ses_test_run' });
+  assert.equal(rows.length, 1, 'session 篩選要篩得到這筆');
+  assert.equal(rows[0].sessionId, 'ses_test_run');
+
+  await app.close();
+  await upstream.close();
+});
+
 test('擷取寫入失敗不會弄壞代理（觀測壞掉 ≠ 代理壞掉）', async () => {
   const ctx = await withProxy((req, res) => {
     res.writeHead(200, { 'content-type': 'text/plain' });

@@ -138,6 +138,9 @@ async function proxyRequest(deps, context) {
   setImmediate(() => {
     const record = buildProxyRecord({
       siteId: site.id,
+      // 本次啟動的 session（由 index.js 建立並注入）。沒有的話是 null，
+      // 但那會讓面板的 session 篩選永遠篩不到東西 —— 別讓它變回 null。
+      sessionId: deps.sessionId ?? null,
       method: req.method,
       upstreamUrl: upstream.upstreamUrl,
       host: upstream.host,
