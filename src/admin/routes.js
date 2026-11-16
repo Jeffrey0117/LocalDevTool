@@ -6,6 +6,8 @@ const { createAdminAuth } = require('./auth');
 const { createNetworkApi } = require('./network-api');
 const { createSitesApi } = require('./sites-api');
 const { renderNetworkPanel, renderPanelScript } = require('./ui');
+const { createInspectorApi } = require('../inspector/api');
+const { renderInspectReport } = require('../inspector/report-html');
 
 /**
  * 管理後台的路由組裝（規格 §9）。
@@ -32,10 +34,23 @@ function createAdminRouter(deps) {
     res.send(renderPanelScript());
   });
 
+  const inspector = createInspectorApi(deps);
+
+  // Inspect 報告的 HTML 版（規格 §8：證據表，不是結論）
+  router.get('/inspect/:id', (req, res) => {
+    const job = inspector.queue.get(req.params.id);
+    if (job === null) {
+      res.status(404).type('text/plain; charset=utf-8').send(`找不到 inspect 報告 ${req.params.id}`);
+      return;
+    }
+    res.type('text/html; charset=utf-8').send(renderInspectReport(job));
+  });
+
   const api = express.Router();
   api.use(express.json({ limit: '2mb' }));
   api.use(createSitesApi(deps));
   api.use(createNetworkApi(deps));
+  api.use(inspector.api);
 
   // JSON 解析失敗要回 400，不是 500。
   // eslint-disable-next-line no-unused-vars -- express 靠四個參數認出 error handler

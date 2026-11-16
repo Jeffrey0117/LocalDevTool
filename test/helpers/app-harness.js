@@ -10,9 +10,10 @@ const ADMIN_TOKEN = 'test-token-not-a-real-secret';
  * 起一台真的 LocalDevTool（綁 port 0）+ 記憶體 DB。
  *
  * @param {object} [envOverrides] 覆寫 env（例如 LOCALDEVTOOL_CAPTURE_SECRETS）
+ * @param {object} [depOverrides] 注入依賴（inspectRunner / playwrightLoader）
  * @returns {Promise<{ baseUrl, db, config, close, app }>}
  */
-async function startTestApp(envOverrides = {}) {
+async function startTestApp(envOverrides = {}, depOverrides = {}) {
   const config = loadConfig({
     LOCALDEVTOOL_ADMIN_TOKEN: ADMIN_TOKEN,
     // 測試的上游是 127.0.0.1 的假 origin server，不放行私網就什麼都測不到。
@@ -21,7 +22,7 @@ async function startTestApp(envOverrides = {}) {
   });
 
   const db = openDb(':memory:');
-  const app = createApp({ db, config, adminToken: ADMIN_TOKEN });
+  const app = createApp({ db, config, adminToken: ADMIN_TOKEN, ...depOverrides });
 
   const server = await new Promise((resolve) => {
     const instance = app.listen(0, '127.0.0.1', () => resolve(instance));
