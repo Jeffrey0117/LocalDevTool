@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LocalDevTool — 流量面板</title>
+<style>
+  :root {
+    --bg: #14161a; --panel: #1b1e24; --line: #2c3139; --text: #e6e6e6;
+    --muted: #8b93a1; --accent: #7fb3d9; --ok: #7fb37f; --warn: #d9a05b; --bad: #d97f7f;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 13px/1.6 ui-monospace, Menlo, Consolas, monospace; }
+  header { padding: 10px 14px; background: var(--panel); border-bottom: 1px solid var(--line);
+           display: flex; gap: 14px; align-items: baseline; flex-wrap: wrap; }
+  header h1 { font-size: 14px; margin: 0; color: var(--accent); }
+  header .note { color: var(--muted); font-size: 12px; }
+  .filters { padding: 8px 14px; background: var(--panel); border-bottom: 1px solid var(--line);
+             display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  input, select, button { background: #22262d; color: var(--text); border: 1px solid var(--line);
+                          border-radius: 4px; padding: 4px 7px; font: inherit; }
+  button { cursor: pointer; }
+  button:hover { background: #2b3038; }
+  button.primary { border-color: var(--accent); color: var(--accent); }
+  .layout { display: flex; height: calc(100vh - 92px); }
+  .list { flex: 1 1 60%; overflow: auto; }
+  .detail { flex: 1 1 40%; overflow: auto; border-left: 1px solid var(--line);
+            padding: 10px 12px; background: #171a1f; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 4px 8px; border-bottom: 1px solid #23272e;
+           white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 320px; }
+  th { position: sticky; top: 0; background: var(--panel); z-index: 1; cursor: help;
+       font-weight: 600; color: var(--muted); }
+  tbody tr { cursor: pointer; }
+  tbody tr:hover { background: #1f232a; }
+  tbody tr.selected { background: #26303a; }
+  .s2 { color: var(--ok); } .s3 { color: var(--accent); }
+  .s4 { color: var(--warn); } .s5 { color: var(--bad); }
+  .src { font-size: 11px; padding: 1px 5px; border: 1px solid var(--line); border-radius: 3px;
+         color: var(--muted); }
+  h3 { font-size: 12px; margin: 14px 0 6px; color: var(--accent);
+       text-transform: uppercase; letter-spacing: .05em; }
+  pre { background: #121418; border: 1px solid var(--line);
+        border-radius: 4px; padding: 8px; overflow: auto; max-height: 340px;
+        white-space: pre-wrap; word-break: break-all; margin: 0; }
+  dl { display: grid; grid-template-columns: max-content 1fr; gap: 2px 10px; margin: 0; }
+  dt { color: var(--muted); } dd { margin: 0; word-break: break-all; }
+  .muted { color: var(--muted); }
+  .warnbox { border-left: 3px solid var(--warn); background: #241f17; padding: 8px 10px;
+             margin: 8px 0; }
+  .badbox { border-left: 3px solid var(--bad); background: #241a1a; padding: 8px 10px;
+            margin: 8px 0; }
+  .okbox { border-left: 3px solid var(--ok); background: #1a241c; padding: 8px 10px; margin: 8px 0; }
+  .diff-same { color: var(--muted); } .diff-add { color: var(--ok); } .diff-del { color: var(--bad); }
+  details { margin: 4px 0; } summary { cursor: pointer; color: var(--accent); }
+  .pill { font-size: 11px; border: 1px solid var(--line); border-radius: 10px; padding: 1px 8px;
+          color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1>LocalDevTool — 流量面板</h1>
+  <span class="note">
+    僅用於自己擁有或已獲授權測試的網站。流量紀錄預設遮蔽憑證（<code>[REDACTED]</code>）。
+  </span>
+  <span class="pill" id="fts-state"></span>
+</header>
+
+<div class="filters">
+  <select id="f-method">
+    <option value="">method（全部）</option>
+    <option>GET</option><option>POST</option><option>PUT</option>
+    <option>PATCH</option><option>DELETE</option><option>HEAD</option>
+  </select>
+  <select id="f-status">
+    <option value="">status（全部）</option>
+    <option value="2xx">2xx</option><option value="3xx">3xx</option>
+    <option value="4xx">4xx</option><option value="5xx">5xx</option>
+  </select>
+  <select id="f-source">
+    <option value="">來源（全部）</option>
+    <option value="proxy">proxy</option>
+    <option value="playwright">playwright</option>
+    <option value="replay">replay</option>
+  </select>
+  <input id="f-url" placeholder="url 包含…" size="18">
+  <input id="f-ctype" placeholder="content-type 包含…" size="16">
+  <input id="f-since" type="datetime-local" title="起始時間">
+  <input id="f-until" type="datetime-local" title="結束時間">
+  <select id="f-session"><option value="">session（全部）</option></select>
+  <button id="apply" class="primary">套用篩選</button>
+  <span class="muted">|</span>
+  <input id="q" placeholder="搜尋回應內容（FTS5）" size="22">
+  <button id="search">搜尋 body</button>
+  <span class="muted">|</span>
+  <button id="compare" title="選兩筆同 URL 的紀錄來比較">比較選取的兩筆</button>
+  <span class="muted" id="count"></span>
+</div>
+
+<div class="layout">
+  <div class="list">
+    <table>
+      <thead><tr>
+        <th title="紀錄寫入時間（ISO，本機時區顯示）">時間</th>
+        <th title="HTTP method">method</th>
+        <th title="上游主機">host</th>
+        <th title="上游路徑">path</th>
+        <th title="上游回應的狀態碼">status</th>
+        <th title="回應的 content-type">content-type</th>
+        <th title="回應 body 的位元組數（含未擷取的 binary）">大小</th>
+        <th title="上游回應時間：Node 發出請求到取得回應標頭的時間。不是瀏覽器的完整載入時間，也不含下載 body 的時間。">上游回應(ms)</th>
+        <th title="proxy = 經過代理的流量；playwright = Inspector 受控瀏覽器；replay = 重送">來源</th>
+      </tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+  <div class="detail" id="detail">
+    <p class="muted">點左邊任一列看詳情。</p>
+    <p class="muted">
+      提醒：reverse proxy 只看得到<strong>經過自己</strong>的流量。原站 JS 直接打到別的網域
+      （<code>fetch("https://api.other-cdn.com/x")</code>）不經過這裡，這張表就不會有。
+      那種要用 Inspector（Playwright）管線。
+    </p>
+  </div>
+</div>
+
+<script src="/admin/panel.js"></script>
+</body>
+</html>

@@ -4,6 +4,8 @@ const express = require('express');
 
 const { createClientRouter } = require('./client/router');
 const { createProxyRouter, createRootFallback } = require('./proxy/router');
+const { createAdminRouter } = require('./admin/routes');
+const { createEventsRouter } = require('./events/routes');
 
 /**
  * 組裝 express app（規格 §3）。
@@ -24,10 +26,16 @@ function createApp(deps) {
   // 1. 保留路徑：注入腳本的投遞
   app.use(createClientRouter());
 
-  // 2. 代理主路由 /p/:siteId/*
+  // 2. 被代理頁面的上報端點（不需要 admin token，但有 Origin / site / rate limit 三道限制）
+  app.use(createEventsRouter(deps));
+
+  // 3. 管理後台（一律要 token，不設 CORS header，寫入檢查 Origin）
+  app.use('/admin', createAdminRouter(deps));
+
+  // 4. 代理主路由 /p/:siteId/*
   app.use(createProxyRouter(deps));
 
-  // 3. 根路徑 fallback —— 必須最後，它會接住所有剩下的路徑
+  // 5. 根路徑 fallback —— 必須最後，它會接住所有剩下的路徑
   app.use(createRootFallback(deps));
 
   // eslint-disable-next-line no-unused-vars -- express 靠四個參數認出 error handler
