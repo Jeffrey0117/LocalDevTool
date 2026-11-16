@@ -1,0 +1,27 @@
+{
+  "name": "localdevtool",
+  "version": "0.1.0",
+  "private": true,
+  "type": "commonjs",
+  "description": "Contextual Network Inspector — self-hosted HTTP traffic observation with right-click excavation",
+  "main": "src/index.js",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node --test \"test/**/*.test.js\"",
+    "test:coverage": "node --test --experimental-test-coverage --test-coverage-exclude=\"test/**\" --test-coverage-exclude=\"src/client/**\" \"test/**/*.test.js\""
+  },
+  "dependencies": {
+    "better-sqlite3": "^12",
+    "express": "^5"
+  },
+  "optionalDependencies": {
+    "playwright": "^1.49.0"
+  },
+  "license": "MIT",
+  "allowScripts": {
+    "better-sqlite3@12.11.1": true
+  }
+}
