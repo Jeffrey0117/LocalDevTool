@@ -13,8 +13,9 @@ LocalDevTool：自架的 HTTP 流量觀測 + 右鍵挖掘工具。
 ```bash
 npm install --omit=optional   # 跳過 Playwright（它會下載幾百 MB Chromium）
 npm start                     # 預設 127.0.0.1:30700
-npm test                      # 351 條
-npm run test:coverage         # 行 93.6% / 分支 84.3% / 函式 92.7%
+npm test                      # 352 條：351 pass / 1 skipped
+npm run test:coverage         # 行 93.5% / 分支 84.3% / 函式 92.7%
+                              # ⚠️ 不含 src/client/inspector.js（563 行，零測試）—— 見下
 
 TEST_PLAYWRIGHT=1 npm test    # 額外跑真實瀏覽器 smoke test（需先裝 chromium）
 ```
@@ -196,10 +197,33 @@ README 有說明。
 Node 24 把 `node --test test/` 的 `test/` 當成**檔案**去 require，會爆
 `Cannot find module`。要用它自己的 glob：`node --test "test/**/*.test.js"`（要加引號）。
 
-### 12. 測試不要留開著的 server
+### 12. 測試資源一律用 `test.after(closeAllOpen)` 清，不要只靠 inline close
 
-node:test 會等 event loop 清空。忘記 `close()` 的 server 會讓整個測試程序掛住不退出
-（我就這樣讓一次 `npm test` 超時了）。每個起 server 的測試都要在結束前關掉。
+node:test 會等 event loop 清空。沒關的 http server 會讓整個測試程序**掛住不退出** ——
+不是失敗、不是逾時訊息，是毫無輸出地卡死。
+
+**這一條我第一版寫錯了，代價很具體。** 原本的做法是每個測試在斷言**之後**
+inline `await harness.close()`。那在測試通過時沒問題，但**斷言一失敗就會跳過那一行**，
+而清理機制恰恰只在失敗時才真的重要。
+
+實際後果：照本檔的退化驗證流程把 `redact/headers.js` 的遮蔽判斷改成 `if (true)`，
+再跑完整 `npm test` → **10 分鐘零輸出後逾時**，完全看不到是哪些測試抓到了。
+等於這個專案自己訂的「故意弄壞來驗證測試有效」紀律被自己的測試寫法廢掉。
+（修好之後同樣的操作：**2 秒內回報 11 條轉紅**。）
+
+現在的做法：資源統一登記在 `test/helpers/open-resources.js`。
+
+```js
+const { closeAllOpen } = require('./helpers/open-resources');
+test.after(closeAllOpen);          // 每個會起 server / DB 的測試檔加這一行
+```
+
+`startTestApp()` 與 `startFakeUpstream()` 回傳的 `close` 已經包過 `track()`，
+所以是 idempotent 的 —— inline close 保留著（讓測試之間彼此隔離），
+`after` 只是失敗時的安全網，兩者並存不會互相打到。
+
+**新增會起 server / DB 的測試檔時，記得加那一行。** 漏了不會立刻出錯，
+只會在某天有人弄壞程式碼時讓套件掛住，而那正是最需要看到輸出的時候。
 
 ### 13. Windows / PowerShell
 
@@ -229,10 +253,33 @@ node:test 會等 event loop 清空。忘記 `close()` 的 server 會讓整個測
 3. `redact/jwt.js` 的 `JWT_SAFE_CLAIMS` 白名單迴圈
 4. `store/requests.js` 的兩個 `redactHeaders(...)` 呼叫
 
-基準：全部拿掉 → 351 條裡有 **21 條**轉紅（涵蓋純模組、DB 落地、真實代理整合路徑、
-replay 警告）。還原後 350 pass / 1 skipped。
+基準（2026-11-16 在**完整套件**上實測，每次都是 2 秒內跑完）：
 
-**動手前先把檔案複製到暫存目錄**，免得還原失敗弄丟實作。
+| 拿掉什麼 | 結果 |
+|---|---|
+| 四個決策點全拿掉 | 352 條裡 **21 條**轉紅（純模組 + DB 落地 + 真實代理整合路徑 + replay 警告） |
+| 只拿掉第 1 個（header） | **11 條**轉紅 |
+| 全部還原 | 351 pass / 1 skipped |
+
+**動手前先把檔案複製到暫存目錄**，免得還原失敗弄丟實作。還原後用
+`git diff --ignore-all-space -- src/` 確認是空的，別只靠肉眼。
+
+如果你做這件事時發現**套件掛住而不是回報失敗**，先去看坑 #12 ——
+很可能是新加的測試檔漏了 `test.after(closeAllOpen)`。
+
+### `src/client/inspector.js` 沒有安全網
+
+那支 563 行的注入腳本**零自動化測試**，而且被排除在覆蓋率統計之外
+（`--test-coverage-exclude`）。它需要 DOM / `MutationObserver` / `HTMLMediaElement` /
+`navigator.requestMediaKeySystemAccess`，Node 載不起來。
+
+它的風險控制靠設計：IIFE 封裝、只掛 `window.__LDT__`、每個 hook 包 `guard()`、
+錯誤一律吞掉並 `console.warn`。目標是「就算它整支壞掉，原站也還能正常運作」——
+但**沒有測試在證明這件事**。
+
+所以改它的時候：手動在真實瀏覽器上驗（起 server、代理一個真網站、開 DevTools
+看 console 有沒有 `[LocalDevTool] inspector 內部錯誤`、確認原站功能沒壞）。
+`src/client/router.js`（39 行純 Node）有整合測試涵蓋，也在統計內。
 
 ### 驗證「真的上線了」要看行為指紋
 

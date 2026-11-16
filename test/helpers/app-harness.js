@@ -3,6 +3,7 @@
 const { createApp } = require('../../src/app');
 const { loadConfig } = require('../../src/config');
 const { openDb } = require('../../src/store/db');
+const { track } = require('./open-resources');
 
 const ADMIN_TOKEN = 'test-token-not-a-real-secret';
 
@@ -35,10 +36,12 @@ async function startTestApp(envOverrides = {}, depOverrides = {}) {
     config,
     adminToken: ADMIN_TOKEN,
     baseUrl: `http://127.0.0.1:${port}`,
-    close: async () => {
+    // track() 讓它同時登記進「還開著的資源」表，並且變成可重複呼叫。
+    // 測試內原本的 await close() 照樣有效；測試檔的 after(closeAllOpen) 是失敗時的安全網。
+    close: track(async () => {
       await new Promise((resolve) => server.close(resolve));
       db.close();
-    },
+    }),
   };
 }
 

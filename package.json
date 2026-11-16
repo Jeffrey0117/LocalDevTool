@@ -6,12 +6,12 @@
   "description": "Contextual Network Inspector — self-hosted HTTP traffic observation with right-click excavation",
   "main": "src/index.js",
   "engines": {
-    "node": ">=22"
+    "node": ">=24"
   },
   "scripts": {
     "start": "node src/index.js",
     "test": "node --test \"test/**/*.test.js\"",
-    "test:coverage": "node --test --experimental-test-coverage --test-coverage-exclude=\"test/**\" --test-coverage-exclude=\"src/client/**\" \"test/**/*.test.js\""
+    "test:coverage": "node --test --experimental-test-coverage --test-coverage-exclude=\"test/**\" --test-coverage-exclude=\"src/client/inspector.js\" \"test/**/*.test.js\""
   },
   "dependencies": {
     "better-sqlite3": "^12",

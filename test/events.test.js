@@ -27,6 +27,13 @@ function pageFetch(app, path, body, overrides = {}) {
   });
 }
 
+const { closeAllOpen } = require('./helpers/open-resources');
+
+// 斷言失敗時也要清乾淨。測試裡 inline 的 await close() 只在測試通過時會跑到，
+// 而沒關掉的 server / DB handle 會讓 node:test 掛住不退出（毫無輸出地卡死）。
+// after() 失敗時照樣執行，所以套件會「快速失敗」而不是掛住。詳見 helpers/open-resources.js。
+test.after(closeAllOpen);
+
 test('被代理頁面的上報被接受（不需要 admin token）', async () => {
   const app = await appWithSite();
   const response = await pageFetch(app, '/__ldt/events', {

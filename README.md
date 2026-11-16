@@ -385,8 +385,8 @@ LocalDevTool
 ## 測試
 
 ```bash
-npm test              # 351 條，全綠
-npm run test:coverage # 行覆蓋 93.6% / 分支 84.3% / 函式 92.7%
+npm test              # 352 條：351 pass / 1 skipped
+npm run test:coverage # 行 93.5% / 分支 84.3% / 函式 92.7%
 ```
 
 用 Node 內建的 `node:test`，不裝測試框架。Server 真的綁 port 0 起起來，
@@ -400,6 +400,26 @@ Playwright 相關的分析邏輯用 **fake 事件流**測，不在 CI 開瀏覽�
 TEST_PLAYWRIGHT=1 npm test   # 需要先 npx playwright install chromium
 ```
 
+### ⚠️ 覆蓋率數字不包含 `src/client/inspector.js`
+
+那個數字會誤導人，所以直說：
+
+> **`src/client/inspector.js`（563 行）完全沒有任何自動化測試**，而且它被排除在
+> 覆蓋率統計之外。上面的 93.5% 是「扣掉它之後」的數字。
+
+它是注入到瀏覽器頁面的腳本 —— 需要 DOM、`MutationObserver`、`HTMLMediaElement`、
+`navigator.requestMediaKeySystemAccess` 這些瀏覽器環境，Node 裡載不起來，
+所以測它需要先架一套 DOM 測試環境。規格沒要求，目前刻意沒做。
+
+諷刺的是**它正是這個專案最核心的差異化功能**（右鍵挖掘）。所以它的風險控制是靠
+設計而不是測試：全部包在 IIFE 裡、只掛一個 `window.__LDT__`、每個 hook 都包
+`guard()`、任何自身錯誤都吞掉並 `console.warn` —— 目標是「就算它整支壞掉，
+被代理的原站也還能正常運作」。但這是設計意圖，**沒有測試在證明它**。
+
+同目錄的 `src/client/router.js`（39 行，純 Node）有被整合測試涵蓋，也在統計內。
+
+要改 `inspector.js` 的人請注意：你沒有安全網，請手動在真實瀏覽器上驗。
+
 ### 遮蔽的退化驗證
 
 遮蔽那組測試做過**退化驗證** —— 這很重要，因為只對著正確程式碼寫的測試可能斷言了
@@ -411,14 +431,27 @@ TEST_PLAYWRIGHT=1 npm test   # 需要先 npx playwright install chromium
 JWT claim 白名單、擷取路徑的兩個 `redactHeaders` 呼叫）：
 
 ```
-ℹ tests 351
-ℹ pass 329
-ℹ fail 21      ← 21 條轉紅
+ℹ tests 352
+ℹ pass 330
+ℹ fail 21      ← 21 條轉紅，2 秒內跑完
 ```
 
 轉紅的涵蓋全部層次：純遮蔽模組、DB 落地、**真實代理整合路徑**
 （「每一筆轉送都寫進 requests，且 cookie / authorization 在 DB 裡是 `[REDACTED]`」）、
-以及 replay 的警告路徑。還原後 350 pass / 1 skipped。
+以及 replay 的警告路徑。還原後 351 pass / 1 skipped。
+
+單獨只拿掉 header 那一個決策點（`SENSITIVE_HEADERS.has(...)` 改成 `if (true)`）
+則是 **11 條轉紅**。
+
+> **這個流程曾經是壞的，修好了。** 原本每個測試都在斷言**之後**才 inline
+> `await x.close()`，斷言一失敗就跳過它 → 沒關的 listener 讓 node:test 等
+> event loop 清空 → **整個套件掛住 10 分鐘零輸出**，而不是回報失敗。
+> 清理機制只在失敗時才真的重要，所以那是最糟的失敗模式：它恰好廢掉了
+> 「故意弄壞來驗證測試有效」這整套紀律。
+>
+> 現在資源統一登記在 `test/helpers/open-resources.js`，每個會起 server / DB 的
+> 測試檔加一行 `test.after(closeAllOpen)` —— `after()` 在斷言失敗後照樣執行。
+> inline close 保留著（讓測試之間彼此隔離），兩者並存因為 close 是 idempotent 的。
 
 ---
 

@@ -18,6 +18,13 @@ async function appWithSite() {
   return app;
 }
 
+const { closeAllOpen } = require('./helpers/open-resources');
+
+// 斷言失敗時也要清乾淨。測試裡 inline 的 await close() 只在測試通過時會跑到，
+// 而沒關掉的 server / DB handle 會讓 node:test 掛住不退出（毫無輸出地卡死）。
+// after() 失敗時照樣執行，所以套件會「快速失敗」而不是掛住。詳見 helpers/open-resources.js。
+test.after(closeAllOpen);
+
 test('GET /admin/api/requests 列出紀錄並帶總數', async () => {
   const app = await appWithSite();
   insertRequest(app.db, requestFixture({ id: 'r1' }), OPTS);

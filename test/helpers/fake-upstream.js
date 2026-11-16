@@ -2,6 +2,8 @@
 
 const http = require('node:http');
 
+const { track } = require('./open-resources');
+
 /**
  * 真的起一台上游 origin server（綁 port 0）。
  * 規格 §11 要求不要 mock fetch —— mock 掉就測不到 header 過濾、解壓、binary 完整性這些真東西。
@@ -36,7 +38,7 @@ async function startFakeUpstream(handler) {
     port,
     received,
     lastRequest: () => received[received.length - 1],
-    close: () => new Promise((resolve) => server.close(resolve)),
+    close: track(() => new Promise((resolve) => server.close(resolve))),
   };
 }
 
