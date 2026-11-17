@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { rewriteSetCookie } = require('../src/proxy/cookies');
+const { rewriteSetCookie, buildSiteCookie } = require('../src/proxy/cookies');
 const { rewriteLocation } = require('../src/proxy/location');
 
 test('Domain= 被拿掉（否則瀏覽器會因為網域不符而丟掉 cookie）', () => {
@@ -51,6 +51,15 @@ test('cookie 值裡含 secure/domain 字樣不會被誤殺', () => {
 test('壞掉的輸入不炸', () => {
   assert.equal(typeof rewriteSetCookie(''), 'string');
   assert.equal(rewriteSetCookie(null), null);
+});
+
+test('ldt_site 必須是 HttpOnly —— 被代理頁面的 JS 不准改它', () => {
+  // 這個 cookie 是 /__ldt/* 判斷「請求屬於哪個 site」的第一順位依據。
+  // 少了 HttpOnly，站 A 的頁面只要 document.cookie = 'ldt_site=站B'
+  // 就能讀到站 B 的 trace 摘要 —— 整個 site 隔離等於沒有。
+  const out = buildSiteCookie('demo');
+  assert.ok(out.startsWith('ldt_site=demo'), `實際收到 ${out}`);
+  assert.match(out, /HttpOnly/i, `ldt_site 必須有 HttpOnly，實際收到 ${out}`);
 });
 
 test('3xx location 指向 target_origin → 改寫成 /p/<siteId>/...', () => {

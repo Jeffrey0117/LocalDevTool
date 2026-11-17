@@ -128,7 +128,9 @@ function renderInspectReport(job) {
   ${section('給出影片網址的 API', ['URL', 'status', '命中的媒體網址'], report.relatedApis, (row) => [
     escapeHtml(row.url),
     escapeHtml(row.status),
-    escapeHtml((row.mediaUrls || []).join('<br>')),
+    // 先逐條轉義再用 <br> 串 —— 反過來做會把分隔符自己也轉義掉，
+    // 多個網址就會印出字面的「<br>」而不是換行。
+    (row.mediaUrls || []).map(escapeHtml).join('<br>'),
   ])}
 
   ${section('授權線索（只記形狀，憑證本身沒有被保存）', ['URL', 'auth_shape', 'Set-Cookie 名稱', '簽章參數'], report.authClues, (row) => [

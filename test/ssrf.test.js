@@ -51,6 +51,27 @@ test('IPv4-mapped IPv6 也要穿透檢查（::ffff:127.0.0.1 是 loopback）', (
   assert.equal(isPrivateAddress('::ffff:8.8.8.8'), false);
 });
 
+test('IPv4-mapped 的十六進位寫法也要穿透（::ffff:7f00:1 就是 127.0.0.1）', () => {
+  // 同一個位址有兩種文字形式。只認帶點的那種，另一種就會被當成公網放行。
+  for (const ip of [
+    '::ffff:7f00:1', // 127.0.0.1
+    '0:0:0:0:0:ffff:7f00:1', // 同上，未壓縮
+    '::ffff:a9fe:a9fe', // 169.254.169.254 雲端 metadata
+    '::ffff:c0a8:1', // 192.168.0.1
+    '::FFFF:7F00:1', // 大寫
+  ]) {
+    assert.equal(isPrivateAddress(ip), true, `${ip} 應該被判為私有`);
+  }
+  // 公網位址用十六進位寫也還是公網，不要過度封鎖。
+  assert.equal(isPrivateAddress('::ffff:808:808'), false, '::ffff:8.8.8.8 不該被判為私有');
+});
+
+test('NAT64 的 well-known prefix（64:ff9b::/96）包著私網位址時也要擋', () => {
+  assert.equal(isPrivateAddress('64:ff9b::7f00:1'), true, 'NAT64 包 127.0.0.1');
+  assert.equal(isPrivateAddress('64:ff9b::a9fe:a9fe'), true, 'NAT64 包 169.254.169.254');
+  assert.equal(isPrivateAddress('64:ff9b::808:808'), false, 'NAT64 包 8.8.8.8 → 公網');
+});
+
 test('壞掉的輸入保守地當成私有（寧可擋錯也不要放行未知）', () => {
   for (const bad of ['', 'not-an-ip', null, undefined, '999.999.999.999']) {
     assert.equal(isPrivateAddress(bad), true, `${bad} 無法判定時應保守擋下`);

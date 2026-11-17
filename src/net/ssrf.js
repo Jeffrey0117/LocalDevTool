@@ -39,15 +39,79 @@ function isPrivateV4(ip) {
   return false;
 }
 
+/**
+ * 把 IPv6 文字展開成 8 個 16-bit 數字。判不出來回 null（呼叫端要保守處理）。
+ *
+ * 為什麼要自己展開：同一個位址有好幾種合法寫法，用字串比對一定會漏。
+ * `::ffff:127.0.0.1` 和 `::ffff:7f00:1` 是**同一個** loopback 位址。
+ *
+ * @param {string} ip 已經是小寫、且 net.isIPv6 認可的字串
+ * @returns {number[]|null}
+ */
+function hextetsOf(ip) {
+  if (ip.split('::').length > 2) return null;
+
+  // 結尾若是帶點的 IPv4（最後 32 bits），先換成兩個 hextet 再統一處理。
+  let text = ip;
+  const dotted = text.match(/(\d{1,3}(?:\.\d{1,3}){3})$/);
+  if (dotted !== null) {
+    const bytes = dotted[1].split('.').map(Number);
+    if (bytes.some((byte) => !Number.isInteger(byte) || byte < 0 || byte > 255)) return null;
+    const pair = [(bytes[0] << 8) | bytes[1], (bytes[2] << 8) | bytes[3]];
+    text = text.slice(0, -dotted[1].length) + pair.map((n) => n.toString(16)).join(':');
+  }
+
+  const compressed = text.includes('::');
+  const [left, right] = text.split('::');
+  const toNumbers = (segment) =>
+    segment === undefined || segment === ''
+      ? []
+      : segment.split(':').map((piece) => Number.parseInt(piece, 16));
+
+  const head = toNumbers(left);
+  const tail = compressed ? toNumbers(right) : [];
+  const fill = 8 - head.length - tail.length;
+  if (fill < 0 || (!compressed && fill !== 0)) return null;
+
+  const all = [...head, ...new Array(fill).fill(0), ...tail];
+  if (all.some((n) => !Number.isInteger(n) || n < 0 || n > 0xffff)) return null;
+  return all;
+}
+
+/**
+ * 取出包在 IPv6 裡的 IPv4 位址：v4-mapped（::ffff:/96）與 NAT64 的
+ * well-known prefix（64:ff9b::/96）都要穿透，否則它們是現成的 SSRF 繞道。
+ *
+ * @param {number[]} hextets
+ * @returns {string|null} 點分十進位，不是這兩種前綴則回 null
+ */
+function embeddedV4(hextets) {
+  const isMapped = hextets.slice(0, 5).every((n) => n === 0) && hextets[5] === 0xffff;
+  const isNat64 =
+    hextets[0] === 0x64 && hextets[1] === 0xff9b && hextets.slice(2, 6).every((n) => n === 0);
+  if (!isMapped && !isNat64) return null;
+
+  const [high, low] = hextets.slice(6);
+  return [high >> 8, high & 0xff, low >> 8, low & 0xff].join('.');
+}
+
 /** @param {string} ip @returns {boolean} */
 function isPrivateV6(ip) {
   const lower = ip.toLowerCase();
 
-  // IPv4-mapped（::ffff:127.0.0.1）必須穿透去看裡面那個 v4 位址。
-  const mapped = lower.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
-  if (mapped) return isPrivateV4(mapped[1]);
+  const hextets = hextetsOf(lower);
+  if (hextets === null) return true; // 判不出來就保守擋下
+
+  // v4-mapped / NAT64 必須穿透去看裡面那個 v4 位址。
+  const inner = embeddedV4(hextets);
+  if (inner !== null) return isPrivateV4(inner);
 
   if (lower === '::1' || lower === '::') return true;
+
+  // ::/96 剩下的都是已廢棄的 IPv4-compatible 寫法（::127.0.0.1），
+  // 公網上不可路由，擋掉不會誤殺任何真實目標。
+  if (hextets.slice(0, 6).every((n) => n === 0)) return true;
+
   if (lower.startsWith('fe80') || lower.startsWith('fe9') || lower.startsWith('fea') || lower.startsWith('feb')) {
     return true; // fe80::/10 link-local
   }

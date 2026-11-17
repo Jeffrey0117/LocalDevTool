@@ -35,11 +35,18 @@ function rewriteSetCookie(raw) {
 /**
  * 代理主路由回 HTML 時用來記住「現在在逛哪個 site」，
  * 讓根絕對路徑的資源請求（/assets/app.js）找得到歸屬。
+ *
+ * **HttpOnly 是安全邊界，不是裝飾。** 這個 cookie 是 `/__ldt/*` 判斷
+ * 「這個上報屬於哪個 site」的第一順位依據（site-resolver.js：cookie > Referer）。
+ * 少了 HttpOnly，站 A 的被代理頁面只要 `document.cookie = 'ldt_site=站B'`
+ * 就能讀到站 B 的 trace 摘要 —— events/routes.js 想守的 site 隔離等於沒有。
+ * 伺服器端是唯一的讀者（沒有任何前端程式碼讀它），所以加上去零風險。
+ *
  * @param {string} siteId
  * @returns {string}
  */
 function buildSiteCookie(siteId) {
-  return `${SITE_COOKIE}=${encodeURIComponent(siteId)}; Path=/; SameSite=Lax`;
+  return `${SITE_COOKIE}=${encodeURIComponent(siteId)}; Path=/; SameSite=Lax; HttpOnly`;
 }
 
 module.exports = { rewriteSetCookie, buildSiteCookie, SITE_COOKIE };
